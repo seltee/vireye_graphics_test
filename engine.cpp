@@ -37,6 +37,7 @@ void Engine::parseLine(int16_t lineNum, uint16_t* cLine){
 	int32_t spriteLineShift, matrixLineSprite;
 	uint8_t byte;
 	const uint8_t *data;
+	bool upScale;
 	
 	if (lineClear){
 		memset(cLine, fillColor, 640);
@@ -44,45 +45,69 @@ void Engine::parseLine(int16_t lineNum, uint16_t* cLine){
 	
 	for (uint16_t s = 0; s < spriteCount; s++){
 		sprTarget = &spriteCash[s];
-		if (lineNum >= sprTarget->y && lineNum < sprTarget->y + sprTarget->height){			
-			actualLine = sprTarget->upScale ? ((lineNum - sprTarget->y)>>1) : (lineNum - sprTarget->y);
+		if (lineNum >= sprTarget->y && lineNum < sprTarget->y + sprTarget->height){	
+			upScale = sprTarget->upScale;
+			actualLine = upScale ? ((lineNum - sprTarget->y)>>1) : (lineNum - sprTarget->y);
 			targetPixel = sprTarget->x;
 			
 			switch(sprTarget->type){
 				case SPRITE_TYPE_PALLETE:
 					// Sprite with in memory
-					actualWidth = sprTarget->width >> 1;
+					actualWidth = upScale ? (sprTarget->width >> 1) : sprTarget->width;
 					// Sprite data
 					data = sprTarget->sprite;
 					// Data to draw pointer
 					spriteBytes = &data[actualLine*actualWidth];
 				
-					if (targetPixel >= 0 && targetPixel < 320-sprTarget->width){
-						for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
-							if (*spriteBytes){
-								color = colorPallet[*spriteBytes];
-								*(uint32_t*)(&cLine[targetPixel]) = color + (color << 16);
+					if (upScale){
+						// Drawing sprite with upsacle
+						if (targetPixel >= 0 && targetPixel < 320-sprTarget->width){
+							for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
+								if (*spriteBytes){
+									color = colorPallet[*spriteBytes];
+									*(uint32_t*)(&cLine[targetPixel]) = color + (color << 16);
+								}
+								targetPixel+=2;
+								spriteBytes++;
 							}
-							targetPixel+=2;
-							spriteBytes++;
+						}else{
+							for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
+								if (*spriteBytes && targetPixel >= 0 && targetPixel < 320){
+									color = colorPallet[*spriteBytes];
+									*(uint32_t*)(&cLine[targetPixel]) = color + (color << 16);
+								}
+								targetPixel+=2;
+								spriteBytes++;
+							}
 						}
-					}else{
-						for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
-							if (*spriteBytes && targetPixel >= 0 && targetPixel < 320){
-								color = colorPallet[*spriteBytes];
-								*(uint32_t*)(&cLine[targetPixel]) = color + (color << 16);
+					} else {
+						// Without upscale
+						if (targetPixel >= 0 && targetPixel < 320-sprTarget->width){
+							for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
+								if (*spriteBytes){
+									*(uint16_t*)(&cLine[targetPixel]) = colorPallet[*spriteBytes];
+								}
+								targetPixel++;
+								spriteBytes++;
 							}
-							targetPixel+=2;
-							spriteBytes++;
+						}else{
+							for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
+								if (*spriteBytes && targetPixel >= 0 && targetPixel < 320){
+									*(uint16_t*)(&cLine[targetPixel]) = colorPallet[*spriteBytes];
+								}
+								targetPixel++;
+								spriteBytes++;
+							}
 						}
 					}
+					
 				break;
 					
 				case SPRITE_TYPE_MASK:
 					color = colorPallet[sprTarget->color];
 					data = sprTarget->sprite;
 				
-					if (sprTarget->upScale){
+					if (upScale){
 						actualWidth = sprTarget->width >> 4;
 						spriteLineShift = actualLine*actualWidth;
 
@@ -140,8 +165,8 @@ void Engine::parseLine(int16_t lineNum, uint16_t* cLine){
 				break;
 					
 				case SPRITE_TYPE_MATRIX:
-					// sprites in row
-					actualMatrixWidth = ((sprTarget->width >> sprTarget->color) >> 1);
+					// sprites in row. Color here stores shift equals to size of each sprite
+					actualMatrixWidth = upScale ? ((sprTarget->width >> sprTarget->color) >> 1) : (sprTarget->width >> sprTarget->color);
 					// real width and height of sprite
 					actualWidth = 1 << sprTarget->color;
 					// line in matrix
@@ -155,34 +180,62 @@ void Engine::parseLine(int16_t lineNum, uint16_t* cLine){
 					// real width on display
 					displayWidth = actualWidth<<1;
 				
-					// iterating sprites in matrix
-					for (spriteIterator = 0; spriteIterator < actualMatrixWidth; spriteIterator++){
-						// drawing each sprite
-						spriteBytes = ((uint8_t**)sprTarget->sprite)[matrixLineSprite] + spriteLineShift;
-						
-						
-						// If sprite fits in boundings - we don't need to check every pixel position
-						if (targetPixel >= 0 && targetPixel < 320-displayWidth){
-							for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
-								if (*spriteBytes){
-									color = colorPallet[*spriteBytes];
-									*(uint32_t*)(&cLine[targetPixel]) = color + (color << 16);
+				
+					if (upScale){
+						// iterating sprites in matrix
+						for (spriteIterator = 0; spriteIterator < actualMatrixWidth; spriteIterator++){
+							// drawing each sprite
+							spriteBytes = ((uint8_t**)sprTarget->sprite)[matrixLineSprite] + spriteLineShift;
+							
+							// If sprite fits in boundings - we don't need to check every pixel position
+							if (targetPixel >= 0 && targetPixel < 320-displayWidth){
+								for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
+									if (*spriteBytes){
+										color = colorPallet[*spriteBytes];
+										*(uint32_t*)(&cLine[targetPixel]) = color + (color << 16);
+									}
+									spriteBytes++;
+									targetPixel+=2;
 								}
-								spriteBytes++;
-								targetPixel+=2;
-							}
-						}else{
-							for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
-								if (*spriteBytes && targetPixel >= 0 && targetPixel < 320){
-									color = colorPallet[*spriteBytes];
-									*(uint32_t*)(&cLine[targetPixel]) = color + (color << 16);
+							}else{
+								for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
+									if (*spriteBytes && targetPixel >= 0 && targetPixel < 320){
+										color = colorPallet[*spriteBytes];
+										*(uint32_t*)(&cLine[targetPixel]) = color + (color << 16);
+									}
+									spriteBytes++;
+									targetPixel+=2;
 								}
-								spriteBytes++;
-								targetPixel+=2;
 							}
+							
+							matrixLineSprite++;
 						}
-						
-						matrixLineSprite++;
+					}else{
+						// iterating sprites in matrix
+						for (spriteIterator = 0; spriteIterator < actualMatrixWidth; spriteIterator++){
+							// drawing each sprite
+							spriteBytes = ((uint8_t**)sprTarget->sprite)[matrixLineSprite] + spriteLineShift;
+							
+							// If sprite fits in boundings - we don't need to check every pixel position
+							if (targetPixel >= 0 && targetPixel < 320-displayWidth){
+								for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
+									if (*spriteBytes){
+										*(uint16_t*)(&cLine[targetPixel]) = colorPallet[*spriteBytes];
+									}
+									spriteBytes++;
+									targetPixel++;
+								}
+							}else{
+								for (widthIterator = 0; widthIterator < actualWidth; widthIterator++){
+									if (*spriteBytes && targetPixel >= 0 && targetPixel < 320){
+										*(uint16_t*)(&cLine[targetPixel]) = colorPallet[*spriteBytes];
+									}
+									spriteBytes++;
+									targetPixel++;
+								}
+							}
+							matrixLineSprite++;
+						}
 					}
 				break;
 			}
@@ -209,15 +262,15 @@ void Engine::setFillColor(unsigned char fillNum){
 	}
 }
 
-void Engine::displaySprite(const uint8_t *sprite, int16_t x, int16_t y, int16_t width, int16_t height){
+void Engine::displaySprite(const uint8_t *sprite, int16_t x, int16_t y, int16_t width, int16_t height, bool upScale){
 	if (spriteCount < MAX_SPRITES){
 		spriteCash[spriteCount].sprite = sprite;
 		spriteCash[spriteCount].type = SPRITE_TYPE_PALLETE;
 		spriteCash[spriteCount].x = x;
 		spriteCash[spriteCount].y = y;
-		spriteCash[spriteCount].width = width<<1;
-		spriteCash[spriteCount].height = height<<1;
-		spriteCash[spriteCount].upScale = true;
+		spriteCash[spriteCount].width = upScale ? (width<<1) : width;
+		spriteCash[spriteCount].height = upScale ? (height<<1) : height;
+		spriteCash[spriteCount].upScale = upScale;
 		spriteCount++;
 	}
 }
@@ -236,7 +289,7 @@ void Engine::displaySpriteMask(const uint8_t *sprite, uint8_t color, int16_t x, 
 	}
 }
 
-void Engine::displaySpriteMatrix(const uint8_t **data, int8_t size, int16_t x, int16_t y, int16_t width, int16_t height){
+void Engine::displaySpriteMatrix(const uint8_t **data, int8_t size, int16_t x, int16_t y, int16_t width, int16_t height, bool upScale){
 	unsigned char shift = 0;
 	if (spriteCount < MAX_SPRITES){
 		switch(size){
@@ -269,9 +322,9 @@ void Engine::displaySpriteMatrix(const uint8_t **data, int8_t size, int16_t x, i
 		spriteCash[spriteCount].type = SPRITE_TYPE_MATRIX;
 		spriteCash[spriteCount].x = x;
 		spriteCash[spriteCount].y = y;
-		spriteCash[spriteCount].width = (width << shift) << 1;
-		spriteCash[spriteCount].height = (height << shift) << 1;
-		spriteCash[spriteCount].upScale = true;
+		spriteCash[spriteCount].width = upScale ? ((width << shift) << 1) : (width << shift);
+		spriteCash[spriteCount].height = upScale ? ((height<< shift) << 1) : (height << shift);
+		spriteCash[spriteCount].upScale = upScale;
 		
 		spriteCash[spriteCount].color = shift;
 		spriteCount++;

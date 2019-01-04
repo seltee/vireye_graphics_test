@@ -10,10 +10,10 @@
 #include "test3.h"
 #include "test4.h"
 
-//#define RUN_TEST_1
+#define RUN_TEST_1
 //#define RUN_TEST_2
 //#define RUN_TEST_3
-#define RUN_TEST_4
+//#define RUN_TEST_4
 
 int main(void)
 {
